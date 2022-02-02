@@ -12,9 +12,10 @@ from PyQt5.QtGui import QPixmap
 
 class Map(QMainWindow):
     def __init__(self):
-        self.ll = ['138.190176', '-29.054505']
-        self.spn = ['20', '20']
+        self.ll = ['50', '50']
+        self.z = '5'
         self.mode = 'map'
+        self.size = ['650', '450']
         super().__init__()
         uic.loadUi('map.ui', self)
         self.ui()
@@ -36,40 +37,55 @@ class Map(QMainWindow):
         if event.key() == Qt.Key_Up:
             if float(self.ll[1]) + 1 <= 90:
                 self.ll[1] = str(float(self.ll[1]) + 1)
+                self.move_search()
         elif event.key() == Qt.Key_Down:
             if float(self.ll[1]) - 1 >= -90:
                 self.ll[1] = str(float(self.ll[1]) - 1)
+                self.move_search()
         elif event.key() == Qt.Key_Left:
             if float(self.ll[0]) - 1 >= -180:
                 self.ll[0] = str(float(self.ll[0]) - 1)
+                self.move_search()
         elif event.key() == Qt.Key_Right:
             if float(self.ll[0]) + 1 <= 180:
                 self.ll[0] = str(float(self.ll[0]) + 1)
+                self.move_search()
         elif event.key() == Qt.Key_PageUp:
-            if float(self.spn[0]) + 10 <= 90:
-                self.spn[0] = str(float(self.spn[0]) + 2)
-                self.spn[1] = str(float(self.spn[1]) + 2)
+            if int(self.z) + 1 <= 17:
+                self.z = str(int(self.z) + 1)
+                self.move_search()
         elif event.key() == Qt.Key_PageDown:
-            if float(self.spn[0]) - 10 >= 0:
-                self.spn[1] = str(float(self.spn[1]) - 2)
-                self.spn[0] = str(float(self.spn[0]) - 2)
-
-        self.search_address()
+            if int(self.z) - 1 >= 0:
+                self.z = str(int(self.z) - 1)
+                self.move_search()
 
     def reset(self):
         self.address_input.setText('')
         self.address_output.setText('')
+        self.point = ''
+        self.move_search()
 
-    def search_address(self):
-        self.address_output.setText('')
-        map_request = f"http://static-maps.yandex.ru/1.x/?ll={','.join(self.ll)}&spn={','.join(self.spn)}&l={self.mode}"
-        response = requests.get(map_request)
-
-        if not response:
-            print("Ошибка выполнения запроса:")
-            print(map_request)
-            print("Http статус:", response.status_code, "(", response.reason, ")")
-            sys.exit(1)
+    def move_search(self):
+        map_api_server = f"http://static-maps.yandex.ru/1.x/"
+        if self.point:
+            map_params = {
+                # позиционируем карту центром на наш исходный адрес
+                "ll": ','.join(self.ll),
+                "z": self.z,
+                "l": self.mode,
+                "size": ','.join(self.size),
+                # добавим точку, чтобы указать найденную аптеку
+                "pt": "{0},pm2dgl".format(','.join(self.point))
+            }
+        else:
+            map_params = {
+                # позиционируем карту центром на наш исходный адрес
+                "ll": ','.join(self.ll),
+                "z": self.z,
+                "l": self.mode,
+                "size": ','.join(self.size)
+            }
+        response = requests.get(map_api_server, params=map_params)
 
         # Запишем полученное изображение в файл.
         self.map_file = "map.png"
@@ -77,27 +93,105 @@ class Map(QMainWindow):
             file.write(response.content)
 
         self.pixmap = QPixmap(self.map_file)
-        self.pixmap = self.pixmap.scaled(700, 500)
+        self.screen.setPixmap(self.pixmap)
+
+    def search_address(self):
+
+        map_api_server = f"http://static-maps.yandex.ru/1.x/"
+
+        if self.address_input.text():
+            toponym_to_find = self.address_input.text()
+
+            geocoder_api_server = "http://geocode-maps.yandex.ru/1.x/"
+
+            geocoder_params = {
+                "apikey": "40d1649f-0493-4b70-98ba-98533de7710b",
+                "geocode": toponym_to_find,
+                "format": "json"}
+
+            response = requests.get(geocoder_api_server, params=geocoder_params)
+
+            if not response:
+                # обработка ошибочной ситуации
+                pass
+
+            # Преобразуем ответ в json-объект
+            json_response = response.json()
+            # Получаем первый топоним из ответа геокодера.
+            toponym = json_response["response"]["GeoObjectCollection"][
+                "featureMember"][0]["GeoObject"]
+            self.toponym = toponym
+            toponym_address = toponym["metaDataProperty"]["GeocoderMetaData"]["Address"]["formatted"].split(', ')
+            # Координаты центра топонима:
+            toponym_coodrinates = toponym["Point"]["pos"]
+            # Долгота и широта:
+
+            self.ll = toponym_coodrinates.split(" ")
+            self.address = ', '.join(toponym_address)
+
+            state = self.index_state.checkState()
+            if state:
+                try:
+                    self.address_output.setText(f'{self.address} \
+                        {toponym["metaDataProperty"]["GeocoderMetaData"]["Address"]["postal_code"]}')
+                except:
+                    self.address_output.setText(self.address)
+            else:
+                self.address_output.setText(self.address)
+            self.point = self.ll.copy()
+
+            map_params = {
+                # позиционируем карту центром на наш исходный адрес
+                "ll": ','.join(self.ll),
+                "z": self.z,
+                "l": self.mode,
+                "size": ','.join(self.size),
+                # добавим точку, чтобы указать найденную аптеку
+                "pt": "{0},pm2dgl".format(','.join(self.point))
+            }
+        else:
+            self.point = ''
+
+            map_params = {
+                # позиционируем карту центром на наш исходный адрес
+                "ll": ','.join(self.ll),
+                "z": self.z,
+                "l": self.mode,
+                "size": ','.join(self.size)
+            }
+
+        response = requests.get(map_api_server, params=map_params)
+
+        # Запишем полученное изображение в файл.
+        self.map_file = "map.png"
+        with open(self.map_file, "wb") as file:
+            file.write(response.content)
+
+        self.pixmap = QPixmap(self.map_file)
         self.screen.setPixmap(self.pixmap)
 
     def mode_layout(self):
         self.mode = 'map'
-        self.search_address()
+        self.move_search()
 
     def mode_satellite(self):
         self.mode = 'sat'
-        self.search_address()
+        self.move_search()
 
     def mode_hybrid(self):
         self.mode = 'sat,skl'
-        self.search_address()
+        self.move_search()
 
     def index_states(self):
         state = self.index_state.checkState()
         if state:
-            pass
+            try:
+                self.address_output.setText(f'{self.address} \
+                    {self.toponym["metaDataProperty"]["GeocoderMetaData"]["Address"]["postal_code"]}')
+            except:
+                self.address_output.setText(self.address)
         else:
-            pass
+            self.address_output.setText(self.address)
 
 
 if __name__ == '__main__':
