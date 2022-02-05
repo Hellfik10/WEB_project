@@ -12,7 +12,7 @@ from PyQt5.QtGui import QPixmap
 
 class Map(QMainWindow):
     def __init__(self):
-        self.ll = ['50', '50']
+        self.ll = ['56.043950', '53.454626']
         self.z = '5'
         self.mode = 'map'
         self.size = ['650', '450']
@@ -27,6 +27,7 @@ class Map(QMainWindow):
         self.layout.clicked.connect(self.mode_layout)
         self.satellite.clicked.connect(self.mode_satellite)
         self.hybrid.clicked.connect(self.mode_hybrid)
+        self.search_address()
 
     def mousePressEvent(self, event):
         focused_widget = QApplication.focusWidget()
